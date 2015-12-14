@@ -25,7 +25,8 @@ from [a1.b1];
 
 With `bqe`, simply run
 
-```./bqe.py -f example.sql --dry
+```
+./bqe.py -f example.sql --dry
 ```
 
 The SQL file will translate it into:
