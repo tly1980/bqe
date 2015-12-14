@@ -41,7 +41,7 @@ SELECT * from [a1.b1];'''
       self.assertTrue(st.is_valid)
       cmd = st.bq_cmd()
       self.assertTrue(cmd[0], 'query')
-      self.assertEqual(cmd[1], ['--udf_resource', 'gs://my-gs/udf/myfun1.js',  '--destination_table', "'[foo1.bar1]'"])
+      self.assertEqual(cmd[1], ['--udf_resource', 'gs://my-gs/udf/myfun1.js',  '--destination_table', '[foo1.bar1]'])
       self.assertEqual(cmd[2], 'SELECT * from [a1.b1]')
 
 
@@ -71,7 +71,7 @@ AS
 SELECT a, b, c 
 from [a1.b1];
 '''
-    jr = bqe.JobRunner([], 
+    jr = bqe.JobRunner([], [],
         stmt1, 
         self.__class__.__name__, True)
     jr.run()

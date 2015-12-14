@@ -2,7 +2,9 @@
 import argparse
 import re
 import logging
-
+import subprocess
+import csv
+import sys
 
 import shortuuid
 import sqlparse
@@ -12,6 +14,7 @@ AP=argparse.ArgumentParser(description="bqe - bq extender. To convert your SQL i
 AP.add_argument('sql', nargs="?", default=None, type=str, help="SQL statement")
 AP.add_argument('-f', nargs="?", default=None, type=str, help="SQL file")
 AP.add_argument('--bqf', nargs="?", default=None, type=str, help="bq global flags. Please provide it as a single string. e.g. '--api_version 2 --dataset_id my_data' ")
+AP.add_argument('--acf', nargs="?", default=None, type=str, help="action flags. Please provide it as a single string. e.g. '--max_rows 0 --dry_run' ")
 AP.add_argument('--dry', action='store_true', help="Enable dry run.", default=False)
 AP.add_argument('--track', action='store_true', help="Enable tracking.", default=False)
 
@@ -73,7 +76,7 @@ class StmtTranslatior(object):
         self.stmt_raw = stmt_raw.strip()
         self.strict=strict
         self.parse()
-        self.re_options = re.compile('([a-zA-Z_-]+)\s+"([^"]+)"')
+        self.re_options = re.compile('([a-zA-Z_-]+)\s+"([^"]*)"')
         self.default_query_options=['--allow_large_results']
 
     def parse(self):
@@ -126,7 +129,7 @@ class StmtTranslatior(object):
                     break
 
         if table:
-            options += ['--destination_table', "%s" % repr(str(table))]
+            options += ['--destination_table', "%s" % table]
 
         tk_as = self.stmt.token_next_match(0, sqlparse.tokens.Keyword, "as")
         tk_as_idx = self.stmt.token_index(tk_as)
@@ -142,19 +145,27 @@ class StmtTranslatior(object):
 
         for kvp in lst:
             k, v = kvp
-            ret += ['--%s' % k, repr(str(v))]
+            if v not in ("true", "false"):
+                ret += ['--%s' % k, '{v}'.format(v=v)]
+            else:
+                if v == "true":
+                    ret += ['--%s' % k]
+                else:
+                    ret += ['--no%s' % k]
 
         return ret
 
 class JobRunner(object):
-    def __init__(self, bq_global_flags, stmts_raw, job_id_pfx, is_dry):
+    def __init__(self, bq_global_flags, action_flags, stmts_raw, job_id_pfx, is_dry):
         self.bq_global_flags = bq_global_flags
+        self.action_flags = action_flags
         self.stmts_raw = stmts_raw
         self.job_id_pfx = job_id_pfx
 
         self.is_dry = is_dry
         self.job_idx = 0
         self.jobs = {}
+        self.dry_writer = csv.writer(sys.stdout, delimiter=' ')
 
 
     def run(self):
@@ -172,9 +183,17 @@ class JobRunner(object):
         self.jobs[self.job_id_current] = actual_cmd
         logging.info("about to execute: %s" % self.job_id_current)
         if self.is_dry:
-            print ' '.join(actual_cmd)
+            self.dry_writer.writerow(actual_cmd)
+            sys.stdout.flush()
         else:
-            sh_call(actual_cmd)
+            self.bq_call(actual_cmd)
+
+    def bq_call(self, actual_cmd):
+        ret = subprocess.call(actual_cmd)
+        if ret == 0:
+            return True
+        return False
+
 
     def globl_flags(self):
         ret = list(self.bq_global_flags)
@@ -187,10 +206,14 @@ class JobRunner(object):
         cmd += self.globl_flags()
         cmd += [bq_cmd_tupple[0]]
         cmd += bq_cmd_tupple[1]
+        cmd += self.action_flags
 
-        cmd += ["%s" % repr(bq_cmd_tupple[2])]
+        cmd += ["{a}".format(a=bq_cmd_tupple[2])]
 
         return cmd
+
+def get_job_idx_pfx():
+    return 'bqe_%s' % shortuuid.uuid()
 
 
 def main(args):
@@ -208,11 +231,15 @@ def main(args):
     if args.bqf:
         bqf = args.bqf.split()
 
+    acf = []
+    if args.acf:
+        acf = args.acf.split()
+
     job_id_pfx = None
     if args.track:
-        job_id_pfx = shortuuid.uuid()
+        job_id_pfx = get_job_idx_pfx()
 
-    jr = JobRunner(bqf, sql, job_id_pfx, args.dry)
+    jr = JobRunner(bqf, acf, sql, job_id_pfx, args.dry)
     jr.run()
 
 if __name__ == '__main__':
