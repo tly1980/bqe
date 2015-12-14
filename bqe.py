@@ -3,7 +3,7 @@ import argparse
 import re
 import logging
 import subprocess
-import csv
+import json
 import sys
 
 import shortuuid
@@ -129,6 +129,7 @@ class StmtTranslatior(object):
                     break
 
         if table:
+            table=table.strip("[]")
             options += ['--destination_table', "%s" % table]
 
         tk_as = self.stmt.token_next_match(0, sqlparse.tokens.Keyword, "as")
@@ -155,6 +156,14 @@ class StmtTranslatior(object):
 
         return ret
 
+def to_cmd_str(lst):
+    lst2 = lst[:-1]
+    lst2.append(
+        json.dumps(lst[-1])
+    )
+    return ' '.join(lst2)
+
+
 class JobRunner(object):
     def __init__(self, 
         bq_global_flags, action_flags, stmts_raw, 
@@ -167,7 +176,6 @@ class JobRunner(object):
         self.is_dry = is_dry
         self.job_idx = 0
         self.outfile = sys.stdout
-        self.dry_writer = csv.writer(sys.stdout, delimiter=' ')
         self.jobs = []
 
 
@@ -187,7 +195,8 @@ class JobRunner(object):
         self.jobs.append((str(self.job_id_current), actual_cmd))
         logging.info("about to execute: %s" % self.job_id_current)
         if self.is_dry:
-            self.dry_writer.writerow(actual_cmd)
+            self.outfile.write(to_cmd_str(actual_cmd))
+            self.outfile.write("\n")
             self.outfile.flush()
         else:
             self.bq_call(actual_cmd)

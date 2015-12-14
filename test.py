@@ -42,7 +42,7 @@ SELECT * from [a1.b1];'''
       self.assertTrue(st.is_valid)
       cmd = st.bq_cmd()
       self.assertTrue(cmd[0], 'query')
-      self.assertEqual(cmd[1], ['--udf_resource', 'gs://my-gs/udf/myfun1.js',  '--destination_table', '[foo1.bar1]'])
+      self.assertEqual(cmd[1], ['--udf_resource', 'gs://my-gs/udf/myfun1.js',  '--destination_table', 'foo1.bar1'])
       self.assertEqual(cmd[2], 'SELECT * from [a1.b1]')
 
   def test_2(self):
@@ -65,7 +65,7 @@ SELECT
         '--udf_resource', 'gs://my-gs/udf/myfun1.js',
         '--nouse_cache',
         '--append_table',
-        '--destination_table', '[foo1.bar1]'])
+        '--destination_table', 'foo1.bar1'])
       self.assertEqual(cmd[2], '''SELECT
 * from
 [a1.b1]''')
