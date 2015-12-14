@@ -50,7 +50,7 @@ SELECT * from [a1.b1];'''
 USING bqe
 OPTIONS ( 
   udf_resource "gs://my-gs/udf/myfun1.js" 
-  use_cache "false"
+  use_cache  "false"
   append_table "true"
 )
 AS 
