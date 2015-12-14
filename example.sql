@@ -1,3 +1,7 @@
+/*
+test abc
+*/
+
 CREATE TABLE [foo1.bar1]
 USING bqe
 OPTIONS ( udf_resource "gs://my-gs/udf/myfun1.js" )

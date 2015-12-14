@@ -21,12 +21,26 @@ IGNORABLE = [
     sqlparse.tokens.Comment,
 ]
 
+IGNORABLE_CLS = [
+    sqlparse.sql.Comment,
+]
+
+
 def expect(tk, ttype, value):
     if tk.ttype != ttype:
         return False
 
 def strip_tokens(tks):
-    return [t for t in tks if t.ttype not in IGNORABLE]
+    ret = []
+    for t in tks:
+        if t.ttype:
+            if t.ttype not in IGNORABLE:
+                ret.append(t)
+        else:
+            if t.__class__ not in IGNORABLE_CLS:
+                ret.append(t)
+
+    return ret
 
 
 RULE_STMT_CREATE_TABLE = strip_tokens(sqlparse.parse('''CREATE TABLE [*] 
@@ -34,8 +48,6 @@ USING bqe
 OPTIONS ( udf_resource "*" )
 AS 
 SELECT''')[0].tokens)
-
-RULE_STMT_LOAD_TABLE = strip_tokens(sqlparse.parse('''LOAD DATA INTO  ''')[0].tokens)
 
 
 def rule_match(rule, tokens):
@@ -69,7 +81,7 @@ class StmtTranslatior(object):
         self.stmt_minimum_tokens = strip_tokens(self.stmt.tokens)
 
     def bq_action(self):
-        if self.stmt_raw.lower().startswith('create '):
+        if self.stmt_minimum_tokens[0].value.lower() in ('create', 'select'):
             return 'query'
 
         raise UnspportBqAction()
@@ -146,7 +158,8 @@ class JobRunner(object):
 
 
     def run(self):
-        for sql in sqlparse.split(self.stmts_raw):
+        sqls = sqlparse.split(self.stmts_raw)
+        for sql in sqls:
             sql = sql.strip()
             if sql:
                 self.job_idx += 1
@@ -157,6 +170,7 @@ class JobRunner(object):
         self.job_id_current = '%s_%s' % ( self.job_id_pfx, self.job_idx)
         actual_cmd = self.render_cmd(bq_cmd_tupple)
         self.jobs[self.job_id_current] = actual_cmd
+        logging.info("about to execute: %s" % self.job_id_current)
         if self.is_dry:
             print ' '.join(actual_cmd)
         else:
