@@ -1,4 +1,5 @@
 import unittest
+import cStringIO as StringIO
 
 import bqe
 
@@ -93,7 +94,7 @@ CREATE TABLE [foo2.bar2]
 USING bqe
 OPTIONS ( udf_resource "gs://my-gs/udf/myfun1.js" )
 AS 
-SELECT a, b, c 
+SELECT a, b, c
 from [a1.b1];
 '''
     jr = bqe.JobRunner([], [],
@@ -101,6 +102,19 @@ from [a1.b1];
         self.__class__.__name__, True)
     jr.run()
 
+   
+
+  def test_acf(self):
+    stmt = '''CREATE TABLE [foo1.bar1]
+USING bqe
+OPTIONS ( udf_resource "gs://my-gs/udf/myfun1.js" )
+AS 
+SELECT * from [a1.b1] where a = "b" and c = 'd';
+'''
+    jr = bqe.JobRunner([], ['--nouse_cache', '-n', '0'],
+        stmt, 
+        self.__class__.__name__, True)
+    jr.run()
 
 if __name__ == '__main__':
     unittest.main()

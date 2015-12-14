@@ -156,7 +156,9 @@ class StmtTranslatior(object):
         return ret
 
 class JobRunner(object):
-    def __init__(self, bq_global_flags, action_flags, stmts_raw, job_id_pfx, is_dry):
+    def __init__(self, 
+        bq_global_flags, action_flags, stmts_raw, 
+        job_id_pfx, is_dry):
         self.bq_global_flags = bq_global_flags
         self.action_flags = action_flags
         self.stmts_raw = stmts_raw
@@ -164,8 +166,9 @@ class JobRunner(object):
 
         self.is_dry = is_dry
         self.job_idx = 0
-        self.jobs = {}
+        self.outfile = sys.stdout
         self.dry_writer = csv.writer(sys.stdout, delimiter=' ')
+        self.jobs = []
 
 
     def run(self):
@@ -180,11 +183,12 @@ class JobRunner(object):
     def execute(self, bq_cmd_tupple):
         self.job_id_current = '%s_%s' % ( self.job_id_pfx, self.job_idx)
         actual_cmd = self.render_cmd(bq_cmd_tupple)
-        self.jobs[self.job_id_current] = actual_cmd
+        #self.jobs[self.job_id_current] = actual_cmd
+        self.jobs.append((str(self.job_id_current), actual_cmd))
         logging.info("about to execute: %s" % self.job_id_current)
         if self.is_dry:
             self.dry_writer.writerow(actual_cmd)
-            sys.stdout.flush()
+            self.outfile.flush()
         else:
             self.bq_call(actual_cmd)
 
