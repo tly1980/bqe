@@ -130,7 +130,7 @@ class StmtTranslatior(object):
 
         for kvp in lst:
             k, v = kvp
-            ret += ['--%s' % k, v]
+            ret += ['--%s' % k, repr(str(v))]
 
         return ret
 
