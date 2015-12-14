@@ -32,17 +32,42 @@ SELECT a, b, c from [a1.b1];''',
 class BqeBasicTest(unittest.TestCase):
 
   def test_1(self):
-      stmt1 = '''CREATE TABLE [foo1.bar1]
+      stmt = '''CREATE TABLE [foo1.bar1]
 USING bqe
 OPTIONS ( udf_resource "gs://my-gs/udf/myfun1.js" )
 AS 
 SELECT * from [a1.b1];'''
-      st = bqe.StmtTranslatior(stmt1)
+      st = bqe.StmtTranslatior(stmt)
       self.assertTrue(st.is_valid)
       cmd = st.bq_cmd()
       self.assertTrue(cmd[0], 'query')
       self.assertEqual(cmd[1], ['--udf_resource', 'gs://my-gs/udf/myfun1.js',  '--destination_table', '[foo1.bar1]'])
       self.assertEqual(cmd[2], 'SELECT * from [a1.b1]')
+
+  def test_2(self):
+      stmt = '''CREATE TABLE [foo1.bar1]
+USING bqe
+OPTIONS ( 
+  udf_resource "gs://my-gs/udf/myfun1.js" 
+  use_cache "false"
+  append_table "true"
+)
+AS 
+SELECT
+* from
+[a1.b1];'''
+      st = bqe.StmtTranslatior(stmt)
+      self.assertTrue(st.is_valid)
+      cmd = st.bq_cmd()
+      self.assertTrue(cmd[0], 'query')
+      self.assertEqual(cmd[1], [
+        '--udf_resource', 'gs://my-gs/udf/myfun1.js',
+        '--nouse_cache',
+        '--append_table',
+        '--destination_table', '[foo1.bar1]'])
+      self.assertEqual(cmd[2], '''SELECT
+* from
+[a1.b1]''')
 
 
 class BqeBasicCreateTest(unittest.TestCase):
