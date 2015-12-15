@@ -40,7 +40,7 @@ AS
 SELECT * from [a1.b1];'''
       st = bqe.StmtTranslatior(stmt)
       self.assertTrue(st.is_valid)
-      cmd = st.bq_cmd()
+      cmd = st.bq_cmd()['cmds']
       self.assertTrue(cmd[0], 'query')
       self.assertEqual(cmd[1], ['--udf_resource', 'gs://my-gs/udf/myfun1.js',  '--destination_table', 'foo1.bar1'])
       self.assertEqual(cmd[2], 'SELECT * from [a1.b1]')
@@ -59,7 +59,7 @@ SELECT
 [a1.b1];'''
       st = bqe.StmtTranslatior(stmt)
       self.assertTrue(st.is_valid)
-      cmd = st.bq_cmd()
+      cmd = st.bq_cmd()['cmds']
       self.assertTrue(cmd[0], 'query')
       self.assertEqual(cmd[1], [
         '--udf_resource', 'gs://my-gs/udf/myfun1.js',
@@ -99,7 +99,7 @@ from [a1.b1];
 '''
     jr = bqe.JobRunner([], [],
         stmt1, 
-        self.__class__.__name__, True)
+        self.__class__.__name__, True, -1)
     jr.run()
 
    
@@ -113,7 +113,7 @@ SELECT * from [a1.b1] where a = "b" and c = 'd';
 '''
     jr = bqe.JobRunner([], ['--nouse_cache', '-n', '0'],
         stmt, 
-        self.__class__.__name__, True)
+        self.__class__.__name__, True, -1)
     jr.run()
 
 if __name__ == '__main__':

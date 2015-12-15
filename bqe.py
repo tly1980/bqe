@@ -38,7 +38,6 @@ IGNORABLE_CLS = [
     sqlparse.sql.Comment,
 ]
 
-
 def expect(tk, ttype, value):
     if tk.ttype != ttype:
         return False
@@ -87,7 +86,7 @@ class StmtTranslatior(object):
         self.strict=strict
         self.parse()
         self.re_options = re.compile('([a-zA-Z_-]+)\s+"([^"]*)"')
-        self.default_query_options=['--allow_large_results']
+        #self.default_query_options=['--allow_large_results']
 
     def parse(self):
         self.stmt = sqlparse.parse(self.stmt_raw)[0]
@@ -125,7 +124,7 @@ class StmtTranslatior(object):
         tk_end = self.stmt.token_next_match(0, sqlparse.tokens.Keyword,"as")
         tks_striped = strip_tokens(self.stmt.tokens_between(tk_begin, tk_end))
         table = None
-        options = list(self.default_query_options)
+        options = []
 
 
         for idx, tk in enumerate(tks_striped):
@@ -149,7 +148,12 @@ class StmtTranslatior(object):
             str(tk) for tk in self.stmt.tokens[tk_as_idx+1:]]
             ).strip().strip(';')
 
-        return { 'cmds': ('query', options, stmt_str), 'table': table, 'stmt_str': stmt_str}
+        return { 
+            'action':'query',
+            'cmds': ('query', options, stmt_str),
+            'table': table,
+            'stmt_str': stmt_str
+        }
 
     def xtract_options(self, options_str):
         lst = self.re_options.findall(options_str)
