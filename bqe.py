@@ -10,13 +10,23 @@ import shortuuid
 import sqlparse
 
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(name)-2s %(levelname)-2s %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S')
+# define a Handler which writes INFO messages or higher to the sys.stderr
+console = logging.StreamHandler()
+console.setLevel(logging.INFO)
+
+
 AP=argparse.ArgumentParser(description="bqe - bq extender. To convert your SQL into bq command.")
 AP.add_argument('sql', nargs="?", default=None, type=str, help="SQL statement")
 AP.add_argument('-f', nargs="?", default=None, type=str, help="SQL file")
 AP.add_argument('--bqf', nargs="?", default=None, type=str, help="bq global flags. Please provide it as a single string. e.g. '--api_version 2 --dataset_id my_data' ")
-AP.add_argument('--acf', nargs="?", default=None, type=str, help="action flags. Please provide it as a single string. e.g. '--max_rows 0 --dry_run' ")
+AP.add_argument('--acf', nargs="?", default="--allow_large_results -n 10", type=str, help="action flags. Please provide it as a single string. e.g. '--max_rows 0 --dry_run' ")
 AP.add_argument('--dry', action='store_true', help="Enable dry run.", default=False)
-AP.add_argument('--track', action='store_true', help="Enable tracking.", default=False)
+AP.add_argument('-t','--track', type=str, default=None, help="A track prefix. If you provide it, it will embeded into job_id as 't=foo'")
+AP.add_argument('--skip', type=int, default=-1, help="How many statements to skip")
 
 IGNORABLE = [
     sqlparse.tokens.Whitespace, 
@@ -102,7 +112,7 @@ class StmtTranslatior(object):
 
     def bq_cmd(self):
         if not self.is_valid():
-            raise InvalidSqlStmtException()
+            raise InvalidSqlStmtException(self.stmt_raw)
 
         if self.bq_action() == 'query':
             return self._bq_cmd_query()
@@ -116,6 +126,7 @@ class StmtTranslatior(object):
         tks_striped = strip_tokens(self.stmt.tokens_between(tk_begin, tk_end))
         table = None
         options = list(self.default_query_options)
+
 
         for idx, tk in enumerate(tks_striped):
             if not tk.match(sqlparse.tokens.Keyword,"as"):
@@ -135,10 +146,10 @@ class StmtTranslatior(object):
         tk_as = self.stmt.token_next_match(0, sqlparse.tokens.Keyword, "as")
         tk_as_idx = self.stmt.token_index(tk_as)
         stmt_str = ''.join([
-            tk.value for tk in self.stmt.tokens[tk_as_idx+1:]]
+            str(tk) for tk in self.stmt.tokens[tk_as_idx+1:]]
             ).strip().strip(';')
 
-        return ('query', options, stmt_str)
+        return { 'cmds': ('query', options, stmt_str), 'table': table, 'stmt_str': stmt_str}
 
     def xtract_options(self, options_str):
         lst = self.re_options.findall(options_str)
@@ -156,18 +167,11 @@ class StmtTranslatior(object):
 
         return ret
 
-def to_cmd_str(lst):
-    lst2 = lst[:-1]
-    lst2.append(
-        json.dumps(lst[-1])
-    )
-    return ' '.join(lst2)
-
 
 class JobRunner(object):
     def __init__(self, 
         bq_global_flags, action_flags, stmts_raw, 
-        job_id_pfx, is_dry):
+        job_id_pfx, is_dry, skip):
         self.bq_global_flags = bq_global_flags
         self.action_flags = action_flags
         self.stmts_raw = stmts_raw
@@ -177,6 +181,7 @@ class JobRunner(object):
         self.job_idx = 0
         self.outfile = sys.stdout
         self.jobs = []
+        self.skip = skip
 
 
     def run(self):
@@ -188,18 +193,29 @@ class JobRunner(object):
                 st = StmtTranslatior(sql)
                 self.execute(st.bq_cmd())
 
-    def execute(self, bq_cmd_tupple):
+    def execute(self, bq_cmd):
+        bq_cmd_tupple = bq_cmd['cmds']
         self.job_id_current = '%s_%s' % ( self.job_id_pfx, self.job_idx)
         actual_cmd = self.render_cmd(bq_cmd_tupple)
         #self.jobs[self.job_id_current] = actual_cmd
         self.jobs.append((str(self.job_id_current), actual_cmd))
-        logging.info("about to execute: %s" % self.job_id_current)
+        logging.info("about to execute: job_idx=%s, bq_job_id=%s, table=%s" % (self.job_idx, self.job_id_current, bq_cmd['table']))
+        cmd_nosql = ' '.join(actual_cmd[:-1])
         if self.is_dry:
-            self.outfile.write(to_cmd_str(actual_cmd))
-            self.outfile.write("\n")
+            self.outfile.write(cmd_nosql)
+            self.outfile.write("\n======\n")
+            self.outfile.write("%s\n======\n\n\n" % bq_cmd['stmt_str'])
             self.outfile.flush()
         else:
-            self.bq_call(actual_cmd)
+            if self.job_idx > self.skip:
+                logging.info("Running: job_idx=%s, sql=\n%s" % (self.job_idx, bq_cmd['stmt_str']))
+                r = self.bq_call(actual_cmd)
+                if not r:
+                    sys.exit(
+                        "bq run failed: job_idx=%s, bq_job_id= %s" % (self.job_idx, self.job_id_current)
+                        )
+            else:
+                logging.info("Skipping: %s, sql=%s" % (self.job_id_current, bq_cmd['stmt_str']))
 
     def bq_call(self, actual_cmd):
         ret = subprocess.call(actual_cmd)
@@ -210,8 +226,7 @@ class JobRunner(object):
 
     def globl_flags(self):
         ret = list(self.bq_global_flags)
-        if self.job_id_pfx:
-            ret += ['--job_id', self.job_id_current]
+        ret += ['--job_id', self.job_id_current]
         return ret
 
     def render_cmd(self, bq_cmd_tupple):
@@ -225,8 +240,11 @@ class JobRunner(object):
 
         return cmd
 
-def get_job_idx_pfx():
-    return 'bqe_%s' % shortuuid.uuid()
+def get_job_idx_pfx(**kwargs):
+    pfxparts = ['bqe', shortuuid.uuid()]
+    for k, v in kwargs.items():
+        pfxparts.append('%s-%s' % (k, v))
+    return '_'.join(pfxparts)
 
 
 def main(args):
@@ -248,11 +266,12 @@ def main(args):
     if args.acf:
         acf = args.acf.split()
 
-    job_id_pfx = None
     if args.track:
+        job_id_pfx = get_job_idx_pfx(t=args.track)
+    else:
         job_id_pfx = get_job_idx_pfx()
 
-    jr = JobRunner(bqf, acf, sql, job_id_pfx, args.dry)
+    jr = JobRunner(bqf, acf, sql, job_id_pfx, args.dry, args.skip)
     jr.run()
 
 if __name__ == '__main__':
